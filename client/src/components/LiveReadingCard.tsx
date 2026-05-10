@@ -9,8 +9,11 @@ interface LiveReadingCardProps {
 }
 
 export function LiveReadingCard({ label, value, unit = "°", previousValue }: LiveReadingCardProps) {
+  const hasValidValue = Number.isFinite(value);
+  const formattedValue = hasValidValue ? value.toFixed(1) : "--";
+
   const getTrendIcon = () => {
-    if (previousValue === undefined) return null;
+    if (previousValue === undefined || !hasValidValue || !Number.isFinite(previousValue)) return null;
     
     if (value > previousValue) {
       return <ArrowUp className="w-4 h-4 text-green-500" />;
@@ -21,13 +24,13 @@ export function LiveReadingCard({ label, value, unit = "°", previousValue }: Li
   };
 
   const getChangePercentage = () => {
-    if (previousValue === undefined || previousValue === 0) return null;
+    if (previousValue === undefined || previousValue === 0 || !hasValidValue || !Number.isFinite(previousValue)) return null;
     const change = ((value - previousValue) / previousValue) * 100;
     return Math.abs(change).toFixed(1);
   };
 
   return (
-    <Card className="shadow-sm">
+    <Card className="bg-card text-card-foreground border shadow-sm min-h-[160px]">
       <CardContent className="p-6 text-center">
         <div className="flex items-center justify-center gap-1 mb-2">
           {getTrendIcon()}
@@ -38,7 +41,7 @@ export function LiveReadingCard({ label, value, unit = "°", previousValue }: Li
           )}
         </div>
         <div className="text-5xl font-bold font-mono mb-2" data-testid={`value-${label.toLowerCase()}`}>
-          {value.toFixed(1)}
+          {formattedValue}
           <span className="text-2xl text-muted-foreground ml-1">{unit}</span>
         </div>
         <div className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
