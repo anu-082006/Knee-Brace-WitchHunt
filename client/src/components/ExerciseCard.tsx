@@ -2,7 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Play, CheckCircle, Square } from "lucide-react";
+import { Play, CheckCircle, Square, Eye } from "lucide-react";
 import type { AssignedExercise } from "@shared/schema";
 
 interface ExerciseCardProps {
@@ -14,6 +14,7 @@ interface ExerciseCardProps {
   isRecording?: boolean;
   disabled?: boolean;
   loading?: boolean;
+  onViewExercise?: () => void;
 }
 
 export function ExerciseCard({
@@ -25,6 +26,7 @@ export function ExerciseCard({
   isRecording = false,
   disabled = false,
   loading = false,
+  onViewExercise,
 }: ExerciseCardProps) {
   const canStart = (exercise.status === "assigned" || exercise.status === "in_progress") && !isRecording;
   const isCompleted = exercise.status === "completed";
@@ -84,17 +86,31 @@ export function ExerciseCard({
           <Progress value={progress} className="h-2" />
         </div>
 
-        {!isCompleted && (!isActive || !isRecording) && (
-          <Button
-            className="w-full"
-            onClick={onStart}
-            disabled={!canStart || disabled || loading}
-            data-testid={`button-start-${exercise.id}`}
-          >
-            <Play className="w-4 h-4 mr-2" />
-            {loading ? "Starting..." : "Start Exercise"}
-          </Button>
-        )}
+        <div className="grid grid-cols-1 gap-2">
+          {onViewExercise && (
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={onViewExercise}
+              data-testid={`button-view-exercise-${exercise.id}`}
+            >
+              <Eye className="w-4 h-4 mr-2" />
+              View Exercise
+            </Button>
+          )}
+
+          {!isCompleted && (!isActive || !isRecording) && (
+            <Button
+              className="w-full"
+              onClick={onStart}
+              disabled={!canStart || disabled || loading}
+              data-testid={`button-start-${exercise.id}`}
+            >
+              <Play className="w-4 h-4 mr-2" />
+              {loading ? "Starting..." : "Start Exercise"}
+            </Button>
+          )}
+        </div>
 
         {!isCompleted && isActive && isRecording && (
           <Button

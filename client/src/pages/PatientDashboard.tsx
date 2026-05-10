@@ -13,6 +13,14 @@ import { TopNav } from "@/components/TopNav";
 import { ArduinoConnectionPanel } from "@/components/ArduinoConnectionPanel";
 import { ExerciseCard } from "@/components/ExerciseCard";
 import { LiveReadingCard } from "@/components/LiveReadingCard";
+import { getExerciseGifPath } from "@/lib/exerciseMedia";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Card,
   CardContent,
@@ -43,6 +51,7 @@ export default function PatientDashboard() {
   const [sessionLoading, setSessionLoading] = useState(false);
   const [activeAssignmentId, setActiveAssignmentId] = useState<string | null>(null);
   const [activeProgressId, setActiveProgressId] = useState<string | null>(null);
+  const [selectedExerciseForPreview, setSelectedExerciseForPreview] = useState<AssignedExercise | null>(null);
 
   const {
     connected,
@@ -487,12 +496,39 @@ export default function PatientDashboard() {
                     loading={
                       sessionLoading && activeAssignmentId === exercise.id && isRecording
                     }
+                    onViewExercise={() => setSelectedExerciseForPreview(exercise)}
                   />
                 ))}
               </div>
             )}
           </CardContent>
         </Card>
+
+        <Dialog
+          open={selectedExerciseForPreview !== null}
+          onOpenChange={(open) => {
+            if (!open) setSelectedExerciseForPreview(null);
+          }}
+        >
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{selectedExerciseForPreview?.exerciseName || "Exercise"}</DialogTitle>
+              <DialogDescription>
+                Follow the movement shown in the GIF while performing your assigned session.
+              </DialogDescription>
+            </DialogHeader>
+            {selectedExerciseForPreview && (
+              <div className="rounded-lg border bg-muted/20 p-2">
+                <img
+                  src={getExerciseGifPath(selectedExerciseForPreview.exerciseName)}
+                  alt={`${selectedExerciseForPreview.exerciseName} demonstration`}
+                  className="w-full rounded-md object-contain max-h-[60vh]"
+                  loading="lazy"
+                />
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {/* 🔹 Recommended Exercises Section (from n8n) */}
         <Card>

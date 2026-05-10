@@ -27,7 +27,7 @@ export function LiveReadingCard({ label, value, unit = "°", previousValue }: Li
   };
 
   return (
-    <Card className="hover-elevate">
+    <Card className="shadow-sm">
       <CardContent className="p-6 text-center">
         <div className="flex items-center justify-center gap-1 mb-2">
           {getTrendIcon()}

@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import cors from "cors";
 import fetch from "node-fetch"; // needed for proxy
+import path from "path";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
@@ -30,6 +31,7 @@ app.use(
   })
 );
 app.use(express.urlencoded({ extended: false }));
+app.use("/gifs", express.static(path.resolve(import.meta.dirname, "..", "gifs")));
 
 // ✅ Request logger
 app.use((req, res, next) => {
