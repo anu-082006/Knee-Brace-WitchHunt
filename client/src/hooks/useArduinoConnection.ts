@@ -40,23 +40,72 @@ export function useArduinoConnection(patientId: string) {
     isRecordingRef.current = isRecording;
   }, [isRecording]);
 
-  // ✅ Parse Arduino serial line (Existing)
+  // ✅ Parse Arduino serial line (supports multiple firmware output formats)
   const parseSerialLine = (line: string): ArduinoReading | null => {
-    const angleMatch = line.match(/Angle:\s*([\d.]+)/);
-    const rollMatch = line.match(/Roll:\s*([\d.-]+)/);
-    const pitchMatch = line.match(/Pitch:\s*([\d.-]+)/);
-    const yawMatch = line.match(/Yaw:\s*([\d.-]+)/);
+    const extractMetric = (patterns: RegExp[]) => {
+      for (const pattern of patterns) {
+        const match = line.match(pattern);
+        if (match) {
+          const parsed = Number.parseFloat(match[1]);
+          if (Number.isFinite(parsed)) return parsed;
+        }
+      }
+      return undefined;
+    };
 
-    if (angleMatch && rollMatch && pitchMatch && yawMatch) {
-      return {
-        angle: parseFloat(angleMatch[1]),
-        roll: parseFloat(rollMatch[1]),
-        pitch: parseFloat(pitchMatch[1]),
-        yaw: parseFloat(yawMatch[1]),
-        raw: line,
-      };
+    const angle = extractMetric([
+      /(?:\bangle\b|\bknee[_\s-]*angle\b)\s*[:=]\s*(-?\d+(?:\.\d+)?)/i,
+      /\bangle\s*(-?\d+(?:\.\d+)?)/i,
+    ]);
+    const roll = extractMetric([
+      /\broll\b\s*[:=]\s*(-?\d+(?:\.\d+)?)/i,
+      /\broll\s*(-?\d+(?:\.\d+)?)/i,
+    ]);
+    const pitch = extractMetric([
+      /\bpitch\b\s*[:=]\s*(-?\d+(?:\.\d+)?)/i,
+      /\bpitch\s*(-?\d+(?:\.\d+)?)/i,
+    ]);
+    const yaw = extractMetric([
+      /\byaw\b\s*[:=]\s*(-?\d+(?:\.\d+)?)/i,
+      /\byaw\s*(-?\d+(?:\.\d+)?)/i,
+    ]);
+
+    // Fallback format: "a,b,c,d" or "a b c d"
+    if (
+      angle === undefined &&
+      roll === undefined &&
+      pitch === undefined &&
+      yaw === undefined
+    ) {
+      const numericValues = line.match(/-?\d+(?:\.\d+)?/g)?.map(Number.parseFloat) ?? [];
+      if (numericValues.length >= 4) {
+        return {
+          angle: numericValues[0],
+          roll: numericValues[1],
+          pitch: numericValues[2],
+          yaw: numericValues[3],
+          raw: line,
+        };
+      }
+      return null;
     }
-    return null;
+
+    if (
+      angle === undefined ||
+      roll === undefined ||
+      pitch === undefined ||
+      yaw === undefined
+    ) {
+      return null;
+    }
+
+    return {
+      angle,
+      roll,
+      pitch,
+      yaw,
+      raw: line,
+    };
   };
 
   // --- NEW: ML ANALYSIS FUNCTION (Pure ML integration, stores results for physio dashboard) ---
