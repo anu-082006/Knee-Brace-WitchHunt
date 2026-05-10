@@ -94,7 +94,7 @@ firebase deploy --only functions
 **Important:** Configure the n8n webhook URL:
 
 ```bash
-firebase functions:config:set n8n.webhook_url="https://clakshanaa1.app.n8n.cloud/webhook-test/patient-query"
+firebase functions:config:set n8n.webhook_url="https://orthoconnect.app.n8n.cloud/webhook/patient-query"
 ```
 
 Redeploy functions after configuration:

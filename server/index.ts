@@ -63,7 +63,7 @@ app.use((req, res, next) => {
 // 🟢 n8n Proxy Route (Prevents CORS issues)
 app.post("/proxy/n8n", async (req: Request, res: Response) => {
   try {
-    const response = await fetch("https://hackgroup.app.n8n.cloud/webhook/patient-query", {
+    const response = await fetch("https://orthoconnect.app.n8n.cloud/webhook/patient-query", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req.body),
@@ -96,14 +96,30 @@ app.post("/proxy/n8n", async (req: Request, res: Response) => {
   }
 
   // ✅ Start server
-  const port = parseInt(process.env.PORT || "5000", 10);
-  server.listen(
-    {
-      port,
-      host: "localhost",
-    },
-    () => {
-      log(`🚀 Serving on http://localhost:${port}`);
-    }
-  );
+  const basePort = parseInt(process.env.PORT || "5000", 10);
+  const host = process.env.HOST || "localhost";
+
+  const startListening = (port: number, remainingTries: number) => {
+    const onError = (err: any) => {
+      // If the port is already in use, try the next port so `npm run dev` still works out-of-box.
+      if (err?.code === "EADDRINUSE" && remainingTries > 0) {
+        server.off("error", onError);
+        const nextPort = port + 1;
+        log(`⚠️  Port ${port} is in use. Trying ${nextPort}...`);
+        startListening(nextPort, remainingTries - 1);
+        return;
+      }
+
+      // Bubble up other errors (or if we ran out of retries).
+      throw err;
+    };
+
+    server.once("error", onError);
+    server.listen({ port, host }, () => {
+      server.off("error", onError);
+      log(`🚀 Serving on http://${host}:${port}`);
+    });
+  };
+
+  startListening(basePort, 20);
 })();

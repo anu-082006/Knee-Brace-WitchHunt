@@ -11,15 +11,28 @@ interface ArduinoReading {
   raw: string;
 }
 
+// Added interface for ML response
+interface MLAnalysisResult {
+  performance_score: number;
+  recovery_stage: string;
+  status: string;
+}
+
 export function useArduinoConnection(patientId: string) {
   const [connected, setConnected] = useState(false);
   const [deviceName, setDeviceName] = useState<string>();
   const [currentReading, setCurrentReading] = useState<ArduinoReading | null>(null);
   const [isRecording, setIsRecording] = useState(false);
 
+  // --- NEW STATE FOR ML INTEGRATION ---
+  const [readingBuffer, setReadingBuffer] = useState<ArduinoReading[]>([]);
+  const [mlFeedback, setMlFeedback] = useState<MLAnalysisResult | null>(null);
+  const MAX_SAMPLES = 200;
+
   const portRef = useRef<SerialPort | null>(null);
   const readerRef = useRef<ReadableStreamDefaultReader<string> | null>(null);
   const currentExerciseIdRef = useRef<string | undefined>();
+  const currentExerciseNameRef = useRef<string>("Heel Slides"); // Track name for ML lookup
   const isRecordingRef = useRef(false);
 
   // Keep refs in sync with state
@@ -27,7 +40,7 @@ export function useArduinoConnection(patientId: string) {
     isRecordingRef.current = isRecording;
   }, [isRecording]);
 
-  // ✅ Parse Arduino serial line
+  // ✅ Parse Arduino serial line (Existing)
   const parseSerialLine = (line: string): ArduinoReading | null => {
     const angleMatch = line.match(/Angle:\s*([\d.]+)/);
     const rollMatch = line.match(/Roll:\s*([\d.-]+)/);
@@ -46,9 +59,98 @@ export function useArduinoConnection(patientId: string) {
     return null;
   };
 
-  // ✅ Save reading locally and send to n8n
+  // --- NEW: ML ANALYSIS FUNCTION (Pure ML integration, stores results for physio dashboard) ---
+  const stopAndAnalyze = useCallback(async () => {
+    if (readingBuffer.length === 0) {
+      console.warn("⚠️ No readings to analyze");
+      setIsRecording(false);
+      return;
+    }
+
+    setIsRecording(false);
+    try {
+      // Ensure we have at least some readings (minimum 10 for meaningful analysis)
+      if (readingBuffer.length < 10) {
+        console.warn("⚠️ Insufficient readings for ML analysis:", readingBuffer.length);
+        setMlFeedback(null);
+        return;
+      }
+
+      const response = await fetch("http://localhost:8000/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          exercise_name: currentExerciseNameRef.current,
+          readings: readingBuffer.map(r => ({
+            knee_angle: r.angle,
+            pitch: r.pitch,
+            roll: r.roll,
+            yaw: r.yaw
+          }))
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        throw new Error(`ML Service error: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      setMlFeedback(result);
+      console.log("✅ ML Analysis complete:", result);
+
+      // Store ML results for physiotherapist dashboard (minimal Firebase write)
+      if (currentExerciseIdRef.current && patientId) {
+        try {
+          await addDoc(collection(db, "mlAnalysisResults"), {
+            patientId,
+            exerciseId: currentExerciseIdRef.current,
+            exerciseName: currentExerciseNameRef.current,
+            timestamp: Date.now(),
+            performance_score: result.performance_score,
+            recovery_stage: result.recovery_stage,
+            status: result.status,
+            sampleCount: readingBuffer.length,
+          });
+          console.log("✅ ML results stored for physiotherapist dashboard");
+        } catch (storageError) {
+          console.error("⚠️ Failed to store ML results:", storageError);
+          // Don't fail the whole operation if storage fails
+        }
+      }
+    } catch (err: any) {
+      console.error("❌ ML Service unreachable:", err);
+      // Set error feedback but don't store to Firebase
+      setMlFeedback({
+        performance_score: 0,
+        recovery_stage: "Analysis Failed",
+        status: err.message || "Service unavailable",
+      });
+    } finally {
+      // Clear buffer after analysis (whether successful or not)
+      setReadingBuffer([]);
+    }
+  }, [readingBuffer, patientId]);
+
+  // --- NEW: AUTOMATIC ML TRIGGER WHEN BUFFER IS FULL ---
+  useEffect(() => {
+    if (readingBuffer.length >= MAX_SAMPLES && isRecording) {
+      console.log("🏁 Buffer full (200 samples). Triggering ML analysis...");
+      stopAndAnalyze();
+    }
+  }, [readingBuffer.length, isRecording, stopAndAnalyze]);
+
+  // ✅ Save reading locally and send to n8n (Existing Logic Maintained)
   const saveReading = useCallback(
     async (reading: ArduinoReading) => {
+      // ADDED: Push to buffer for ML (limit to MAX_SAMPLES)
+      setReadingBuffer(prev => {
+        if (prev.length >= MAX_SAMPLES) {
+          return prev; // Don't add more once we hit the limit
+        }
+        return [...prev, reading];
+      });
+
       try {
         const exerciseId = currentExerciseIdRef.current ?? "unassigned";
 
@@ -66,11 +168,10 @@ export function useArduinoConnection(patientId: string) {
 
         const collectionRef = collection(db, "readings");
         const readingDocRef = await addDoc(collectionRef, readingData);
-        console.log("✅ Saved reading:", readingData);
-
-        // 🔗 Send to n8n webhook
+        
+        // 🔗 Send to n8n webhook (Existing)
         try {
-          const n8nRes = await fetch("https://hackgroup.app.n8n.cloud/webhook-test/patient-query", {
+          const n8nRes = await fetch("https://orthoconnect.app.n8n.cloud/webhook/patient-query", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(readingData),
@@ -79,15 +180,12 @@ export function useArduinoConnection(patientId: string) {
           const status = n8nRes.status;
           const n8nData = await n8nRes.json().catch(() => ({}));
 
-          console.log("🤖 n8n Response:", n8nData);
-
           await updateDoc(readingDocRef, {
             sentToN8N: true,
             n8nStatusCode: status,
             n8nResponse: JSON.stringify(n8nData),
           });
 
-          // Optionally store recommendations for patient
           if (Array.isArray(n8nData) && n8nData[0]?.recommendations) {
             const patientRef = collection(db, "patients", patientId, "n8nResponses");
             await addDoc(patientRef, {
@@ -105,7 +203,7 @@ export function useArduinoConnection(patientId: string) {
     [patientId]
   );
 
-  // ✅ Connect to Arduino device
+  // ✅ Connect to Arduino device (Existing)
   const connect = useCallback(async () => {
     try {
       const port = await navigator.serial.requestPort();
@@ -114,18 +212,13 @@ export function useArduinoConnection(patientId: string) {
       setConnected(true);
       setDeviceName("Arduino Device");
 
-      if (!port.readable) throw new Error("Serial port not readable");
-
       const decoder = new TextDecoderStream();
       const reader = decoder.readable.getReader();
       const writable = decoder.writable as WritableStream<Uint8Array>;
       const readableStreamClosed = (port.readable as ReadableStream<Uint8Array>).pipeTo(writable);
       readerRef.current = reader;
 
-      console.log("🔌 Connected to Arduino.");
-
       let buffer = "";
-
       (async () => {
         try {
           while (true) {
@@ -138,14 +231,11 @@ export function useArduinoConnection(patientId: string) {
             buffer = lines.pop() || "";
 
             for (const line of lines) {
-              const trimmed = line.trim();
-              if (trimmed) {
-                const reading = parseSerialLine(trimmed);
-                if (reading) {
-                  setCurrentReading(reading);
-                  if (isRecordingRef.current) {
-                    saveReading(reading);
-                  }
+              const reading = parseSerialLine(line.trim());
+              if (reading) {
+                setCurrentReading(reading);
+                if (isRecordingRef.current) {
+                  saveReading(reading);
                 }
               }
             }
@@ -154,63 +244,45 @@ export function useArduinoConnection(patientId: string) {
           console.error("❌ Error in read loop:", error);
         }
       })();
-
       await readableStreamClosed.catch(() => {});
     } catch (error) {
-      console.error("⚠️ Error connecting to Arduino:", error);
+      console.error("⚠️ Error connecting:", error);
       setConnected(false);
     }
   }, [saveReading]);
 
-  // ✅ Disconnect from Arduino
+  // ✅ Disconnect from Arduino (Existing)
   const disconnect = useCallback(async () => {
     try {
-      if (readerRef.current) {
-        await readerRef.current.cancel();
-        readerRef.current = null;
-      }
-
-      if (portRef.current) {
-        await portRef.current.close();
-        portRef.current = null;
-      }
-
+      if (readerRef.current) { await readerRef.current.cancel(); readerRef.current = null; }
+      if (portRef.current) { await portRef.current.close(); portRef.current = null; }
       setConnected(false);
-      setDeviceName(undefined);
-      setCurrentReading(null);
-      console.log("🔌 Disconnected from Arduino.");
-    } catch (error) {
-      console.error("❌ Error disconnecting:", error);
-    }
+    } catch (error) { console.error("❌ Error disconnecting:", error); }
   }, []);
 
-  // ✅ Start recording (can request exercise ID from n8n or use given one)
+  // ✅ Start recording (Existing with added Name param)
   const startRecording = useCallback(
-    async (exerciseId?: string) => {
-      console.log("▶️ Starting recording...");
+    async (exerciseId?: string, exerciseName?: string) => {
+      setReadingBuffer([]); // Clear buffer for new session
+      setMlFeedback(null);  // Clear old results
+      currentExerciseNameRef.current = exerciseName || "Heel Slides";
 
       try {
         if (exerciseId) {
           currentExerciseIdRef.current = exerciseId;
           setIsRecording(true);
-          console.log("Recording for exercise:", exerciseId);
           return;
         }
-
-        const res = await fetch("https://hackgroup.app.n8n.cloud/webhook/patient-query", {
+        // Fallback to n8n for ID (Existing)
+        const res = await fetch("https://orthoconnect.app.n8n.cloud/webhook/patient-query", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ patientId }),
         });
-
         const data = await res.json();
-        const generatedId = data.exerciseId || "manual-" + Date.now();
-
-        currentExerciseIdRef.current = generatedId;
+        currentExerciseIdRef.current = data.exerciseId || "manual-" + Date.now();
         setIsRecording(true);
-        console.log("Got exerciseId from n8n:", generatedId);
       } catch (error) {
-        console.error("❌ Failed to get exercise ID from n8n:", error);
         currentExerciseIdRef.current = "unknown";
         setIsRecording(true);
       }
@@ -218,18 +290,23 @@ export function useArduinoConnection(patientId: string) {
     [patientId]
   );
 
-  // ✅ Stop recording
+  // ✅ Stop recording (Updated to trigger Analysis)
   const stopRecording = useCallback(() => {
-    console.log("⏹️ Recording stopped");
-    setIsRecording(false);
-    currentExerciseIdRef.current = undefined;
-  }, []);
+    if (readingBuffer.length > 0) {
+      stopAndAnalyze();
+    } else {
+      setIsRecording(false);
+      currentExerciseIdRef.current = undefined;
+    }
+  }, [readingBuffer, stopAndAnalyze]);
 
   return {
     connected,
     deviceName,
     currentReading,
     isRecording,
+    readingCount: readingBuffer.length, // PROGRESS TRACKING
+    mlFeedback,                        // ML RESULT DATA
     connect,
     disconnect,
     startRecording,
