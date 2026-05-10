@@ -377,18 +377,22 @@ export default function PatientDashboard() {
           </div>
 
           <div className="lg:col-span-2">
-            {connected && currentReading && (
+            {connected && (
               <Card className="mb-6">
                 <CardHeader>
                   <CardTitle className="text-xl">Live Readings</CardTitle>
-                  <CardDescription>Real-time data from your device</CardDescription>
+                  <CardDescription>
+                    {currentReading
+                      ? "Real-time data from your device"
+                      : "Connected. Waiting for sensor data..."}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <LiveReadingCard label="Angle" value={currentReading.angle} />
-                    <LiveReadingCard label="Roll" value={currentReading.roll} />
-                    <LiveReadingCard label="Pitch" value={currentReading.pitch} />
-                    <LiveReadingCard label="Yaw" value={currentReading.yaw} />
+                    <LiveReadingCard label="Angle" value={currentReading?.angle ?? Number.NaN} />
+                    <LiveReadingCard label="Roll" value={currentReading?.roll ?? Number.NaN} />
+                    <LiveReadingCard label="Pitch" value={currentReading?.pitch ?? Number.NaN} />
+                    <LiveReadingCard label="Yaw" value={currentReading?.yaw ?? Number.NaN} />
                   </div>
                   {/* ML Progress Indicator */}
                   {isRecording && (
