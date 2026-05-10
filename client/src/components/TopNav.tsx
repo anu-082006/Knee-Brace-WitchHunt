@@ -34,7 +34,7 @@ export function TopNav() {
           <Activity className="w-6 h-6 text-primary-foreground" />
         </div>
         <div>
-          <h1 className="text-xl font-bold">PhysioTrack</h1>
+          <h1 className="text-xl font-bold">OrthoConnect</h1>
           <p className="text-xs text-muted-foreground">
             {userProfile?.role === "physiotherapist" ? "Professional Dashboard" : "Patient Portal"}
           </p>
