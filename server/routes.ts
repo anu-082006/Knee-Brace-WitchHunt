@@ -74,6 +74,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 🤖 Proxy ML analyze (browser → same origin → Node → FastAPI on 8000)
+  app.post("/api/ml/analyze", async (req: Request, res: Response) => {
+    const mlUrl = process.env.ML_SERVICE_URL || "http://127.0.0.1:8000/analyze";
+    try {
+      const response = await fetch(mlUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body),
+      });
+      const rawBody = await response.text();
+      const trimmed = rawBody.trim();
+      if (!trimmed) {
+        return res.status(response.status).json({});
+      }
+      try {
+        const data = JSON.parse(trimmed);
+        return res.status(response.status).json(data);
+      } catch {
+        return res.status(response.status).json({
+          error: "ML returned non-JSON",
+          detail: trimmed.slice(0, 500),
+        });
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("❌ ML proxy error:", message);
+      return res.status(502).json({
+        error: "ML service unreachable",
+        message,
+      });
+    }
+  });
+
   // 🔧 Create HTTP server
   const httpServer = createServer(app);
   console.log("✅ Routes registered successfully");
