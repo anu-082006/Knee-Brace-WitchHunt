@@ -1,7 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
-import { LiveReadingCard } from "@/components/LiveReadingCard";
 import { Usb, Power, Circle } from "lucide-react";
 
 interface ArduinoConnectionPanelProps {

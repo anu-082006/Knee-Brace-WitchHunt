@@ -40,8 +40,25 @@ export function useArduinoConnection(patientId: string) {
     isRecordingRef.current = isRecording;
   }, [isRecording]);
 
-  // ✅ Parse Arduino serial line (supports multiple firmware output formats)
+  // ✅ Parse Arduino serial line — same primary format as before ML (docs + attached_assets).
+  // Also split stream on \r as well as \n (some boards/USB stacks use \r-only lines).
   const parseSerialLine = (line: string): ArduinoReading | null => {
+    // 1) Original strict format (this is what worked before ML changes)
+    const angleMatch = line.match(/Angle:\s*([\d.-]+)/i);
+    const rollMatch = line.match(/Roll:\s*([\d.-]+)/i);
+    const pitchMatch = line.match(/Pitch:\s*([\d.-]+)/i);
+    const yawMatch = line.match(/Yaw:\s*([\d.-]+)/i);
+    if (angleMatch && rollMatch && pitchMatch && yawMatch) {
+      return {
+        angle: parseFloat(angleMatch[1]),
+        roll: parseFloat(rollMatch[1]),
+        pitch: parseFloat(pitchMatch[1]),
+        yaw: parseFloat(yawMatch[1]),
+        raw: line,
+      };
+    }
+
+    // 2) Flexible labels (knee angle, case variants, etc.)
     const extractMetric = (patterns: RegExp[]) => {
       for (const pattern of patterns) {
         const match = line.match(pattern);
@@ -55,22 +72,21 @@ export function useArduinoConnection(patientId: string) {
 
     const angle = extractMetric([
       /(?:\bangle\b|\bknee[_\s-]*angle\b)\s*[:=]\s*(-?\d+(?:\.\d+)?)/i,
-      /\bangle\s*(-?\d+(?:\.\d+)?)/i,
+      /\bangle\s*[:=]\s*(-?\d+(?:\.\d+)?)/i,
     ]);
     const roll = extractMetric([
       /\broll\b\s*[:=]\s*(-?\d+(?:\.\d+)?)/i,
-      /\broll\s*(-?\d+(?:\.\d+)?)/i,
+      /\broll\s*[:=]\s*(-?\d+(?:\.\d+)?)/i,
     ]);
     const pitch = extractMetric([
       /\bpitch\b\s*[:=]\s*(-?\d+(?:\.\d+)?)/i,
-      /\bpitch\s*(-?\d+(?:\.\d+)?)/i,
+      /\bpitch\s*[:=]\s*(-?\d+(?:\.\d+)?)/i,
     ]);
     const yaw = extractMetric([
       /\byaw\b\s*[:=]\s*(-?\d+(?:\.\d+)?)/i,
-      /\byaw\s*(-?\d+(?:\.\d+)?)/i,
+      /\byaw\s*[:=]\s*(-?\d+(?:\.\d+)?)/i,
     ]);
 
-    // Fallback format: "a,b,c,d" or "a b c d"
     if (
       angle === undefined &&
       roll === undefined &&
@@ -99,14 +115,9 @@ export function useArduinoConnection(patientId: string) {
       return null;
     }
 
-    return {
-      angle,
-      roll,
-      pitch,
-      yaw,
-      raw: line,
-    };
+    return { angle, roll, pitch, yaw, raw: line };
   };
+
 
   // --- NEW: ML ANALYSIS FUNCTION (Pure ML integration, stores results for physio dashboard) ---
   const stopAndAnalyze = useCallback(async () => {
@@ -276,7 +287,7 @@ export function useArduinoConnection(patientId: string) {
             if (!value) continue;
 
             buffer += value;
-            const lines = buffer.split("\n");
+            const lines = buffer.split(/\r\n|\n|\r/);
             buffer = lines.pop() || "";
 
             for (const line of lines) {
