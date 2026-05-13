@@ -1,4 +1,4 @@
-# OrthoConnect (Knee-Braced)
+# OrthoConnect (Smart-Knee-Brace)
 
 Web application for knee rehabilitation: patients connect an IMU-based device over **Web Serial**, complete assigned exercises, and receive **ML performance feedback** plus **AI exercise recommendations** from **n8n**. Physiotherapists review progress in Firebase-backed dashboards.
 
