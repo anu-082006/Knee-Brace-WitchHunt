@@ -128,7 +128,7 @@ export default function PatientDashboard() {
         console.warn("⚠️ Direct n8n webhook failed (likely CORS), trying proxy method:", directError);
 
         // Fallback: Try proxy method if direct fails (CORS or other issues)
-        const proxyResponse = await fetch("/api/n8n/patient-query-test", {
+        const proxyResponse = await fetch("/api/n8n/patient-query", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
