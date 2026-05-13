@@ -22,6 +22,7 @@ Web application for knee rehabilitation: patients connect an IMU-based device ov
 - **Python 3.11+** recommended for `ml-service` (fewer wheel issues than bleeding-edge Python)
 
 ## Quick start (local development)
+## For the Full experience of the platform - Arduino UNO microcontroller and MPU6050 sensor is required.
 
 ### 1. Install and run the web app
 
